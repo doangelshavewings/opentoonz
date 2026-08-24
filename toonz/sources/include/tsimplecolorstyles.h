@@ -250,6 +250,7 @@ protected:
   TLevelP m_level;
   std::string m_name;
   double m_space, m_rotation;
+  TRect m_patternBounds;
 
 public:
   TRasterImagePatternStrokeStyle();
