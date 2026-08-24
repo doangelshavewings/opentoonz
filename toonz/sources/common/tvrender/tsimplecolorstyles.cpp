@@ -977,17 +977,13 @@ TPixel32 TTextureStyle::getMainColor() const
 //*************************************************************************************
 
 TRasterImagePatternStrokeStyle::TRasterImagePatternStrokeStyle()
-    : m_level(), m_name(""), m_space(0), m_rotation(0), m_patternBounds() {}
+    : m_level(), m_name(""), m_space(0), m_rotation(0) {}
 
 //-----------------------------------------------------------------------------
 
 TRasterImagePatternStrokeStyle::TRasterImagePatternStrokeStyle(
     const std::string &patternName)
-    : m_level(),
-      m_name(patternName),
-      m_space(20),
-      m_rotation(0),
-      m_patternBounds() {
+    : m_level(), m_name(patternName), m_space(20), m_rotation(0) {
   if (m_name != "") loadLevel(m_name);
 }
 
@@ -1142,7 +1138,6 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
 
   // button l'eventuale livello
   m_level = TLevelP();
-  m_patternBounds.empty();
 
   // aggiorno il nome
   m_name = patternName;
@@ -1174,8 +1169,6 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
   TLevelP level = lr->loadInfo();
   TLevel::Iterator frameIt;
   TOfflineGL *glContext = 0;
-  TDimension patternSize;
-  bool consistentPatternSize = true;
 
   for (frameIt = level->begin(); frameIt != level->end(); ++frameIt) {
     TImageP img = lr->getFrameReader(frameIt->first)->load();
@@ -1188,15 +1181,6 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
       ras = fitTextureToSize(ras, kMaxRasterPatternTextureSize);
       if (!ras) continue;
       m_level->setFrame(frameIt->first, new TRasterImage(ras));
-
-      if (patternSize == TDimension())
-        patternSize = ras->getSize();
-      else if (patternSize != ras->getSize())
-        consistentPatternSize = false;
-
-      TRect frameBounds;
-      TRop::computeBBox(ras, frameBounds);
-      m_patternBounds += frameBounds;
     } else if (TVectorImageP vi = img) {
       // se il frame e' vettoriale
       // lo rasterizzo creando una texture 256x256 (N.B. le dimensioni
@@ -1221,10 +1205,6 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
   }
   // cancello il contesto offline (se e' stato creato)
   delete glContext;
-
-  // Bounds are meaningful as a shared reference only when every animated
-  // frame uses the same canvas size.  Keep the legacy sizing otherwise.
-  if (!consistentPatternSize) m_patternBounds.empty();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1248,8 +1228,6 @@ void TRasterImagePatternStrokeStyle::computeTransformations(
   assert(!images.empty());
   if (images.empty()) return;
 
-  const bool hasPatternBounds = !m_patternBounds.isEmpty();
-
   double s  = 0;
   int index = 0;
   int m     = images.size();
@@ -1259,25 +1237,11 @@ void TRasterImagePatternStrokeStyle::computeTransformations(
     TPointD v     = stroke->getSpeed(t);
     double ang    = rad2degree(atan(v)) + m_rotation;
 
-    const TDimensionD &imageSize = images[index];
-    double patternWidth = imageSize.lx;
-    double patternHeight = imageSize.ly;
-    TPointD patternCenterOffset;
-    if (hasPatternBounds) {
-      patternWidth  = m_patternBounds.getLx();
-      patternHeight = m_patternBounds.getLy();
-      patternCenterOffset = TPointD(
-          m_patternBounds.x0 + m_patternBounds.x1 - (imageSize.lx - 1),
-          m_patternBounds.y0 + m_patternBounds.y1 - (imageSize.ly - 1));
-    }
-
-    double ly   = std::max(1.0, patternHeight);
+    int ly    = std::max(1.0, images[index].ly);
     double sc = p.thick / ly;
-    transformations.push_back(TTranslation(p) * TRotation(ang) * TScale(sc) *
-                              TTranslation(-patternCenterOffset));
-    double ds = std::max(2.0, sc * patternWidth * 2 + m_space);
+    transformations.push_back(TTranslation(p) * TRotation(ang) * TScale(sc));
+    double ds = std::max(2.0, sc * images[index].lx * 2 + m_space);
     s += ds;
-    index = (index + 1) % m;
   }
 }
 
