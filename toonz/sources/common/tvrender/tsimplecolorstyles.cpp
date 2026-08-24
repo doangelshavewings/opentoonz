@@ -67,26 +67,33 @@ namespace {
 
 //-----------------------------------------------------------------------------
 
-// se ras ha le dimensioni giuste (potenze di due) ritorna ras. Altrimenti
-// crea il piu' piccolo raster con le dimensioni giuste che contenga ras e
-// copia il contenuto (scalandolo)
-// se il raster di partenza e' vuoto, non e' ras32 o e' piu' piccolo di 2x2
-// ritorna un raster vuoto
-TRaster32P makeTexture(const TRaster32P &ras) {
+// Keep raster pattern source images at a useful resolution.  Texture sizes do
+// not need to be powers of two on the OpenGL 2.1 renderers supported by
+// OpenToonz.  The cap keeps a malformed or accidentally huge source image from
+// consuming excessive memory while preserving its aspect ratio.
+constexpr int kMaxRasterPatternTextureSize = 2048;
+
+// Returns ras unchanged when it fits.  Otherwise, resamples it uniformly to
+// fit maxTextureSize.  A caller that has a current GL context can pass
+// GL_MAX_TEXTURE_SIZE to make the source safe for that hardware.
+TRaster32P fitTextureToSize(const TRaster32P &ras, int maxTextureSize) {
   if (!ras || ras->getLx() < 2 || ras->getLy() < 2) return TRaster32P();
-  TRaster32P ras32 = ras;
-  if (!ras32) return TRaster32P();
-  TDimension d(2, 2);
-  while (d.lx < 256 && d.lx * 2 <= ras32->getLx()) d.lx *= 2;
-  while (d.ly < 256 && d.ly * 2 <= ras32->getLy()) d.ly *= 2;
-  if (d == ras32->getSize())
-    return ras32;
-  else {
-    TRaster32P texture(d);
-    TScale sc((double)d.lx / ras32->getLx(), (double)d.ly / ras32->getLy());
-    TRop::resample(texture, ras32, sc);
-    return texture;
-  }
+
+  const TDimension sourceSize = ras->getSize();
+  if (sourceSize.lx <= maxTextureSize && sourceSize.ly <= maxTextureSize)
+    return ras;
+
+  const double scale = std::min(
+      maxTextureSize / (double)sourceSize.lx,
+      maxTextureSize / (double)sourceSize.ly);
+  const TDimension textureSize(
+      std::max(2, (int)(sourceSize.lx * scale)),
+      std::max(2, (int)(sourceSize.ly * scale)));
+  TRaster32P texture(textureSize);
+  TScale textureScale((double)textureSize.lx / sourceSize.lx,
+                      (double)textureSize.ly / sourceSize.ly);
+  TRop::resample(texture, ras, textureScale);
+  return texture;
 }
 
 //-----------------------------------------------------------------------------
@@ -1169,8 +1176,9 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
       // se il frame e' raster...
       TRaster32P ras = ri->getRaster();
       if (!ras) continue;
-      // aggiusta le dimensioni
-      ras = makeTexture(ras);
+      // Keep the source detail for raster Trail styles.  The actual hardware
+      // texture limit is checked while drawing, when a GL context is current.
+      ras = fitTextureToSize(ras, kMaxRasterPatternTextureSize);
       if (!ras) continue;
       m_level->setFrame(frameIt->first, new TRasterImage(ras));
     } else if (TVectorImageP vi = img) {
@@ -1258,6 +1266,10 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+  GLint maxTextureSize = 0;
+  glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+  if (maxTextureSize < 2) maxTextureSize = kMaxRasterPatternTextureSize;
+
   GLuint texId;
   glGenTextures(1, &texId);
 
@@ -1279,11 +1291,17 @@ void TRasterImagePatternStrokeStyle::drawStroke(
   TLevel::Iterator frameIt = m_level->begin();
   for (int i = 0; i < (int)size && frameIt != m_level->end(); ++i, ++frameIt) {
     TRasterImageP ri = frameIt->second;
-    TRasterP ras;
+    TRaster32P ras;
     if (ri) ras = ri->getRaster();
     if (!ras) continue;
+
+    // Some systems expose a smaller maximum texture size than the storage cap
+    // used when the style was loaded.  Downsample only for those systems and
+    // keep the original image geometry for the stroke transformation.
+    TRaster32P texture = fitTextureToSize(ras, maxTextureSize);
+    if (!texture) continue;
     TextureInfoForGL texInfo;
-    TRasterP texImage = prepareTexture(ras, texInfo);
+    TRasterP texImage = prepareTexture(texture, texInfo);
 
     glTexImage2D(GL_TEXTURE_2D,
                  0,                       // one level only
