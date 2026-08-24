@@ -1571,20 +1571,57 @@ void TVectorImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
 
 //--------------------------------------------------------------------------------------------------
 
+namespace {
+
+TLevel::Iterator getPatternFrameIterator(const TLevelP &level,
+                                         const TStroke *stroke) {
+  const int frameCount = level->getFrameCount();
+  assert(frameCount > 0);
+
+  int offset = stroke->outlineOptions().m_patternFrameOffset % frameCount;
+  if (offset < 0) offset += frameCount;
+
+  TLevel::Iterator it = level->begin();
+  while (offset-- > 0) {
+    if (++it == level->end()) it = level->begin();
+  }
+  return it;
+}
+
+void advancePatternFrameIterator(TLevel::Iterator &it, const TLevelP &level,
+                                 int step) {
+  const int frameCount = level->getFrameCount();
+  assert(frameCount > 0);
+
+  if (step == 0) step = 1;
+  step %= frameCount;
+  if (step < 0) step += frameCount;
+
+  while (step-- > 0) {
+    if (++it == level->end()) it = level->begin();
+  }
+}
+
+}  // namespace
+
+//--------------------------------------------------------------------------------------------------
+
 void TVectorImagePatternStrokeStyle::computeTransformations(
     std::vector<TAffine> &transformations, const TStroke *stroke) const {
+  if (!m_level) return;
   const int frameCount = m_level->getFrameCount();
   if (frameCount == 0) return;
   transformations.clear();
   const double length = stroke->getLength();
   assert(m_level->begin() != m_level->end());
-  TLevel::Iterator lit = m_level->begin();
+  TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
+  const int frameStep = stroke->outlineOptions().m_patternFrameStep;
   double s             = 0;
 
   while (s < length) {
     TFrameId fid      = lit->first;
     TVectorImageP img = m_level->frame(fid);
-    if (++lit == m_level->end()) lit = m_level->begin();
+    advancePatternFrameIterator(lit, m_level, frameStep);
     assert(img);
     if (img->getType() != TImage::VECTOR) return;
     double t       = stroke->getParameterAtLength(s);
@@ -1620,6 +1657,7 @@ void TVectorImagePatternStrokeStyle::clearGlDisplayLists() {
 void TVectorImagePatternStrokeStyle::drawStroke(
     const TVectorRenderData &rd, const std::vector<TAffine> &transformations,
     const TStroke *stroke) const {
+  if (!m_level) return;
   const int frameCount = m_level->getFrameCount();
   if (frameCount == 0) return;
   //------------------------------------------
@@ -1647,7 +1685,7 @@ void TVectorImagePatternStrokeStyle::drawStroke(
 
     tglMultMatrix(rd.m_aff);
 
-    TLevel::Iterator lit = m_level->begin();
+    TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
 
     TFrameId fid      = lit->first;
     TVectorImageP img = m_level->frame(fid);
@@ -1711,13 +1749,14 @@ void TVectorImagePatternStrokeStyle::drawStroke(
   } else {
     //--------------------------------------------
     assert(m_level->begin() != m_level->end());
-    TLevel::Iterator lit = m_level->begin();
+    TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
+    const int frameStep = stroke->outlineOptions().m_patternFrameStep;
     UINT i, size = transformations.size();
 
     for (i = 0; i < size; i++) {
       TFrameId fid      = lit->first;
       TVectorImageP img = m_level->frame(fid);
-      if (++lit == m_level->end()) lit = m_level->begin();
+      advancePatternFrameIterator(lit, m_level, frameStep);
       assert(img);
       if (!img) continue;
       if (img->getType() != TImage::VECTOR) return;

@@ -35,6 +35,7 @@
 
 class TTileSetCM32;
 class TTileSaverCM32;
+class TColorStyle;
 class RasterStrokeGenerator;
 class BluredBrush;
 
@@ -217,6 +218,7 @@ protected:
   TBoolProperty m_pressure;
   TBoolProperty m_snap;
   TEnumProperty m_frameRange;
+  TEnumProperty m_trailCycle;
   TEnumProperty m_snapSensitivity;
   TEnumProperty m_capStyle;
   TEnumProperty m_joinStyle;
@@ -242,6 +244,10 @@ protected:
   TFrameId m_firstFrameId, m_veryFirstFrameId;
   TPixel32 m_currentColor;
   int m_styleId;
+  int m_trailFrameOffset;
+  int m_trailFrameCount;
+  int m_trailFrameStep;
+  const TColorStyle *m_trailStyle;
   double m_minThick, m_maxThick;
 
   // for snapping and framerange
@@ -259,7 +265,8 @@ protected:
   VectorBrushPresetManager
       m_presetsManager;  //!< Manager for presets of this tool instance
 
-  bool m_active, m_firstTime, m_isPath, m_presetsLoaded, m_firstFrameRange;
+  bool m_active, m_firstTime, m_isPath, m_presetsLoaded, m_firstFrameRange,
+      m_trailCycleActive;
 
   bool m_propertyUpdating;
   double m_cameraDpi;
