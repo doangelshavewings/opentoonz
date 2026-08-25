@@ -338,7 +338,9 @@ public:
   bool isRegionStyle() const override { return false; }
   bool isStrokeStyle() const override { return true; }
 
-  int getLevelFrameCount() { return m_level->getFrameCount(); }
+  int getLevelFrameCount() const {
+    return m_level ? m_level->getFrameCount() : 0;
+  }
 
   void computeTransformations(std::vector<TAffine> &positions,
                               const TStroke *stroke) const;

@@ -2433,14 +2433,12 @@ TUINT32 ParsedPliImp::writeOutlineOptionsTag(StrokeOutlineOptionsTag *tag) {
 
   TINT32 miterLower = scale * tag->m_options.m_miterLower;
   TINT32 miterUpper = scale * tag->m_options.m_miterUpper;
-  TINT32 frameOffset = tag->m_options.m_patternFrameOffset;
-  TINT32 frameStep   = tag->m_options.m_patternFrameStep;
+  TINT32 frameOffset             = tag->m_options.m_patternFrameOffset;
+  TINT32 frameStep               = tag->m_options.m_patternFrameStep;
   const bool hasPatternFrameData = frameOffset != 0 || frameStep != 1;
 
-  int minValue = std::min((int)(scale * miterLower),
-                          (int)(scale * miterUpper));
-  int maxValue = std::max((int)(scale * miterLower),
-                          (int)(scale * miterUpper));
+  int minValue = std::min((int)(scale * miterLower), (int)(scale * miterUpper));
+  int maxValue = std::max((int)(scale * miterLower), (int)(scale * miterUpper));
   if (hasPatternFrameData) {
     minValue = std::min({minValue, (int)frameOffset, (int)frameStep});
     maxValue = std::max({maxValue, (int)frameOffset, (int)frameStep});

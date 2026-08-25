@@ -83,18 +83,21 @@ TRaster32P fitTextureToSize(const TRaster32P &ras, int maxTextureSize) {
   if (sourceSize.lx <= maxTextureSize && sourceSize.ly <= maxTextureSize)
     return ras;
 
-  const double scale = std::min(
-      maxTextureSize / (double)sourceSize.lx,
-      maxTextureSize / (double)sourceSize.ly);
-  const TDimension textureSize(
-      std::max(2, (int)(sourceSize.lx * scale)),
-      std::max(2, (int)(sourceSize.ly * scale)));
+  const double scale = std::min(maxTextureSize / (double)sourceSize.lx,
+                                maxTextureSize / (double)sourceSize.ly);
+  const TDimension textureSize(std::max(2, (int)(sourceSize.lx * scale)),
+                               std::max(2, (int)(sourceSize.ly * scale)));
   TRaster32P texture(textureSize);
   TScale textureScale((double)textureSize.lx / sourceSize.lx,
                       (double)textureSize.ly / sourceSize.ly);
   TRop::resample(texture, ras, textureScale);
   return texture;
 }
+
+TLevel::Iterator getPatternFrameIterator(const TLevelP &level,
+                                         const TStroke *stroke);
+void advancePatternFrameIterator(TLevel::Iterator &it, const TLevelP &level,
+                                 int step);
 
 //-----------------------------------------------------------------------------
 
@@ -1211,6 +1214,7 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
 
 void TRasterImagePatternStrokeStyle::computeTransformations(
     std::vector<TAffine> &transformations, const TStroke *stroke) const {
+  if (!m_level) return;
   const int frameCount = m_level->getFrameCount();
   if (frameCount == 0) return;
   transformations.clear();
@@ -1250,6 +1254,7 @@ void TRasterImagePatternStrokeStyle::computeTransformations(
 void TRasterImagePatternStrokeStyle::drawStroke(
     const TVectorRenderData &rd, const std::vector<TAffine> &transformations,
     const TStroke *stroke) const {
+  if (!m_level) return;
   TStopWatch sw;
   sw.start();
   CHECK_GL_ERROR
@@ -1260,6 +1265,7 @@ void TRasterImagePatternStrokeStyle::drawStroke(
   // lo stroke viene disegnato ripetendo size volte le frameCount immagini
   // contenute in level, posizionando ognuna secondo transformations[i]
   UINT size = transformations.size();
+  if (size == 0) return;
 
   glEnable(GL_TEXTURE_2D);
   glEnable(GL_BLEND);
@@ -1286,11 +1292,16 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
-  // visto che cambiare texture costa tempo il ciclo esterno e' sulle textures
-  // piuttosto che sulle trasformazioni
-  TLevel::Iterator frameIt = m_level->begin();
-  for (int i = 0; i < (int)size && frameIt != m_level->end(); ++i, ++frameIt) {
-    TRasterImageP ri = frameIt->second;
+  // Since changing textures is expensive, keep the outer loop on source
+  // frames.  Starting from the stroke's saved offset and advancing by its
+  // saved step lets each stamp render the intended cycle frame.
+  TLevel::Iterator frameIt = getPatternFrameIterator(m_level, stroke);
+  const int frameStep      = stroke->outlineOptions().m_patternFrameStep;
+  for (int i = 0; i < (int)size && i < frameCount; ++i) {
+    TLevel::Iterator currentFrameIt = frameIt;
+    advancePatternFrameIterator(frameIt, m_level, frameStep);
+
+    TRasterImageP ri = currentFrameIt->second;
     TRaster32P ras;
     if (ri) ras = ri->getRaster();
     if (!ras) continue;
@@ -1633,7 +1644,7 @@ void TVectorImagePatternStrokeStyle::computeTransformations(
   const double length = stroke->getLength();
   assert(m_level->begin() != m_level->end());
   TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
-  const int frameStep = stroke->outlineOptions().m_patternFrameStep;
+  const int frameStep  = stroke->outlineOptions().m_patternFrameStep;
   double s             = 0;
 
   while (s < length) {
@@ -1768,7 +1779,7 @@ void TVectorImagePatternStrokeStyle::drawStroke(
     //--------------------------------------------
     assert(m_level->begin() != m_level->end());
     TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
-    const int frameStep = stroke->outlineOptions().m_patternFrameStep;
+    const int frameStep  = stroke->outlineOptions().m_patternFrameStep;
     UINT i, size = transformations.size();
 
     for (i = 0; i < size; i++) {

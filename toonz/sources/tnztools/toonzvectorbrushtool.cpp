@@ -575,8 +575,7 @@ ToonzVectorBrushTool::ToonzVectorBrushTool(std::string name, int targetType)
     , m_presetsLoaded()
     , m_firstFrameRange(true)
     , m_trailCycleActive()
-    , m_propertyUpdating()
-{
+    , m_propertyUpdating() {
   bind(targetType);
 
   m_thickness.setNonLinearSlider();
@@ -851,7 +850,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
     m_styleId = 0;
     m_tracks.clear();
     m_trailCycleActive = false;
-    
+
     TTool::Application *app = TTool::getApplication();
     if (!app)
       return;
@@ -882,36 +881,37 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
       m_currentColor = cs->getAverageColor();
       m_currentColor.m = 255;
 
-      m_trailCycleActive = false;
-      TVectorImagePatternStrokeStyle *trailStyle =
-          dynamic_cast<TVectorImagePatternStrokeStyle *>(cs);
-      const int trailFrameCount =
-          trailStyle ? trailStyle->getLevelFrameCount() : 0;
+      m_trailCycleActive  = false;
+      int trailFrameCount = 0;
+      if (TVectorImagePatternStrokeStyle *trailStyle =
+              dynamic_cast<TVectorImagePatternStrokeStyle *>(cs))
+        trailFrameCount = trailStyle->getLevelFrameCount();
+      else if (TRasterImagePatternStrokeStyle *trailStyle =
+                   dynamic_cast<TRasterImagePatternStrokeStyle *>(cs))
+        trailFrameCount = trailStyle->getLevelFrameCount();
       if (!m_frameRange.getIndex() && m_trailCycle.getIndex() != 0 &&
           trailFrameCount > 1) {
         m_trailFrameStep = m_trailCycle.getIndex() == 2 ? -1 : 1;
         if (m_trailStyle != cs || m_trailFrameCount != trailFrameCount) {
-          m_trailStyle = cs;
-          m_trailFrameCount = trailFrameCount;
-          m_trailFrameOffset =
-              m_trailFrameStep < 0 ? trailFrameCount - 1 : 0;
+          m_trailStyle       = cs;
+          m_trailFrameCount  = trailFrameCount;
+          m_trailFrameOffset = m_trailFrameStep < 0 ? trailFrameCount - 1 : 0;
         }
         m_trailFrameOffset %= trailFrameCount;
-        if (m_trailFrameOffset < 0)
-          m_trailFrameOffset += trailFrameCount;
+        if (m_trailFrameOffset < 0) m_trailFrameOffset += trailFrameCount;
         m_trailCycleActive = true;
       } else {
-        m_trailStyle = 0;
+        m_trailStyle      = 0;
         m_trailFrameCount = 0;
-        m_trailFrameStep = 1;
+        m_trailFrameStep  = 1;
       }
     } else {
       m_styleId = 1;
       m_currentColor = TPixel32::Black;
       m_trailCycleActive = false;
-      m_trailStyle = 0;
-      m_trailFrameCount = 0;
-      m_trailFrameStep = 1;
+      m_trailStyle       = 0;
+      m_trailFrameCount  = 0;
+      m_trailFrameStep   = 1;
     }
     
     m_active = true;
@@ -996,7 +996,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
     options.m_miterUpper = m_miterJoinLimit.getValue();
     if (m_trailCycleActive) {
       options.m_patternFrameOffset = m_trailFrameOffset;
-      options.m_patternFrameStep = m_trailFrameStep;
+      options.m_patternFrameStep   = m_trailFrameStep;
     }
 
     if ( stroke->getControlPointCount() == 3
@@ -1111,8 +1111,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
       if (m_trailFrameCount > 1) {
         m_trailFrameOffset =
             (m_trailFrameOffset + m_trailFrameStep) % m_trailFrameCount;
-        if (m_trailFrameOffset < 0)
-          m_trailFrameOffset += m_trailFrameCount;
+        if (m_trailFrameOffset < 0) m_trailFrameOffset += m_trailFrameCount;
       }
     }
   }
