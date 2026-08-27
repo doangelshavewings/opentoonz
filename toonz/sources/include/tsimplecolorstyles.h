@@ -258,9 +258,7 @@ public:
   bool isRegionStyle() const override { return false; }
   bool isStrokeStyle() const override { return true; }
 
-  int getLevelFrameCount() const {
-    return m_level ? m_level->getFrameCount() : 0;
-  }
+  int getLevelFrameCount() const { return m_level->getFrameCount(); }
 
   void computeTransformations(std::vector<TAffine> &positions,
                               const TStroke *stroke) const;
@@ -338,9 +336,7 @@ public:
   bool isRegionStyle() const override { return false; }
   bool isStrokeStyle() const override { return true; }
 
-  int getLevelFrameCount() const {
-    return m_level ? m_level->getFrameCount() : 0;
-  }
+  int getLevelFrameCount() const { return m_level->getFrameCount(); }
 
   void computeTransformations(std::vector<TAffine> &positions,
                               const TStroke *stroke) const;

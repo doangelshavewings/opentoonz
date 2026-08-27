@@ -1,4 +1,5 @@
 
+#include <cmath>
 #include <cstring>
 
 // TnzCore includes
@@ -92,6 +93,16 @@ TRaster32P fitTextureToSize(const TRaster32P &ras, int maxTextureSize) {
                       (double)textureSize.ly / sourceSize.ly);
   TRop::resample(texture, ras, textureScale);
   return texture;
+}
+
+// A pattern stamp is drawn as a quad reaching thickness * (lx / ly, 1) from
+// its point on the stroke, and is then rotated, so it can extend well past the
+// stroke outline.  Render tiles and level icons are cut from the image bbox
+// while the viewer draws without clipping to it, so a bbox that ignores the
+// stamps loses them everywhere except on canvas.
+double getPatternStampMargin(const TStroke *stroke, double maxAspectRatio) {
+  const double thickness = const_cast<TStroke *>(stroke)->getMaxThickness();
+  return thickness * std::sqrt(maxAspectRatio * maxAspectRatio + 1.0);
 }
 
 TLevel::Iterator getPatternFrameIterator(const TLevelP &level,
@@ -1214,38 +1225,52 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
 
 void TRasterImagePatternStrokeStyle::computeTransformations(
     std::vector<TAffine> &transformations, const TStroke *stroke) const {
-  if (!m_level) return;
   const int frameCount = m_level->getFrameCount();
   if (frameCount == 0) return;
   transformations.clear();
   const double length = stroke->getLength();
 
+  // Collect the source sizes in the order drawStroke walks them so that every
+  // stamp is scaled and spaced by the frame it draws, not by the first frame
+  // of the level.
   std::vector<TDimensionD> images;
-  assert(m_level->begin() != m_level->end());
-  TLevel::Iterator lit;
-  for (lit = m_level->begin(); lit != m_level->end(); ++lit) {
+  images.reserve(frameCount);
+  TDimensionD firstValidSize(0, 0);
+  TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
+  const int frameStep  = stroke->outlineOptions().m_patternFrameStep;
+  for (int i = 0; i < frameCount; ++i) {
+    TDimensionD size(0, 0);
     TRasterImageP ri = lit->second;
-    if (!ri) continue;
-    TDimension d = ri->getRaster()->getSize();
-    images.push_back(TDimensionD(d.lx, d.ly));
+    if (ri && ri->getRaster()) {
+      TDimension d = ri->getRaster()->getSize();
+      size         = TDimensionD(d.lx, d.ly);
+      if (firstValidSize.ly < 1) firstValidSize = size;
+    }
+    images.push_back(size);
+    advancePatternFrameIterator(lit, m_level, frameStep);
   }
-  assert(!images.empty());
-  if (images.empty()) return;
+  if (firstValidSize.ly < 1) return;
+
+  // A frame with no raster is not drawn, but it still holds its place in the
+  // cycle, so give it a size that keeps the remaining stamps evenly spaced.
+  for (int i = 0; i < frameCount; ++i)
+    if (images[i].ly < 1) images[i] = firstValidSize;
 
   double s  = 0;
   int index = 0;
-  int m     = images.size();
   while (s < length) {
     double t      = stroke->getParameterAtLength(s);
     TThickPoint p = stroke->getThickPoint(t);
     TPointD v     = stroke->getSpeed(t);
     double ang    = rad2degree(atan(v)) + m_rotation;
 
-    int ly    = std::max(1.0, images[index].ly);
-    double sc = p.thick / ly;
+    const TDimensionD &image = images[index];
+    double ly                = std::max(1.0, image.ly);
+    double sc                = p.thick / ly;
     transformations.push_back(TTranslation(p) * TRotation(ang) * TScale(sc));
-    double ds = std::max(2.0, sc * images[index].lx * 2 + m_space);
+    double ds = std::max(2.0, sc * image.lx * 2 + m_space);
     s += ds;
+    index = (index + 1) % frameCount;
   }
 }
 
@@ -1254,7 +1279,6 @@ void TRasterImagePatternStrokeStyle::computeTransformations(
 void TRasterImagePatternStrokeStyle::drawStroke(
     const TVectorRenderData &rd, const std::vector<TAffine> &transformations,
     const TStroke *stroke) const {
-  if (!m_level) return;
   TStopWatch sw;
   sw.start();
   CHECK_GL_ERROR
@@ -1292,6 +1316,13 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
+  // Modulating with the render color function keeps the stamps in step with
+  // column filters, column opacity and onion skin fading, which every other
+  // stroke style already follows.  Modulation can only scale a texture, so a
+  // color function's additive term - the onion skin tint - is not applied.
+  TPixel32 stampColor = TPixel32::White;
+  if (rd.m_cf) stampColor = (*rd.m_cf)(stampColor);
+
   // Since changing textures is expensive, keep the outer loop on source
   // frames.  Starting from the stroke's saved offset and advancing by its
   // saved step lets each stamp render the intended cycle frame.
@@ -1323,6 +1354,7 @@ void TRasterImagePatternStrokeStyle::drawStroke(
                  texInfo.type,    // pixel format           // crappy names
                  texInfo.format,  // pixel data type        // oh, SO much
                  texImage->getRawData());
+    CHECK_GL_ERROR
 
     for (int j = i; j < (int)size; j += frameCount) {
       TAffine aff = rd.m_aff * transformations[j];
@@ -1332,7 +1364,8 @@ void TRasterImagePatternStrokeStyle::drawStroke(
       double rx = ras->getLx();
       double ry = ras->getLy();
 
-      glColor4d(1, 1, 1, 1);
+      glColor4d(stampColor.r / 255.0, stampColor.g / 255.0,
+                stampColor.b / 255.0, stampColor.m / 255.0);
 
       glBegin(QUAD_PRIMITIVE);
       glTexCoord2d(0, 0);
@@ -1419,7 +1452,22 @@ void TRasterImagePatternStrokeStyle::getObsoleteTagIds(
 TRectD TRasterImagePatternStrokeStyle::getStrokeBBox(
     const TStroke *stroke) const {
   TRectD rect = TColorStyle::getStrokeBBox(stroke);
-  return rect.enlarge(std::max(rect.getLx() * 0.25, rect.getLy() * 0.25));
+
+  double maxAspectRatio = 1.0;
+  for (TLevel::Iterator it = m_level->begin(); it != m_level->end(); ++it) {
+    TRasterImageP ri = it->second;
+    if (!ri) continue;
+    TRasterP ras = ri->getRaster();
+    if (!ras || ras->getLy() < 1) continue;
+    maxAspectRatio =
+        std::max(maxAspectRatio, ras->getLx() / (double)ras->getLy());
+  }
+
+  // The historical margin stays as a lower bound, so strokes whose stamps
+  // already fit keep the bounding box they have always had.
+  const double margin = std::max(std::max(rect.getLx(), rect.getLy()) * 0.25,
+                                 getPatternStampMargin(stroke, maxAspectRatio));
+  return rect.enlarge(margin);
 }
 
 //*************************************************************************************
@@ -1637,7 +1685,6 @@ void advancePatternFrameIterator(TLevel::Iterator &it, const TLevelP &level,
 
 void TVectorImagePatternStrokeStyle::computeTransformations(
     std::vector<TAffine> &transformations, const TStroke *stroke) const {
-  if (!m_level) return;
   const int frameCount = m_level->getFrameCount();
   if (frameCount == 0) return;
   transformations.clear();
@@ -1686,7 +1733,6 @@ void TVectorImagePatternStrokeStyle::clearGlDisplayLists() {
 void TVectorImagePatternStrokeStyle::drawStroke(
     const TVectorRenderData &rd, const std::vector<TAffine> &transformations,
     const TStroke *stroke) const {
-  if (!m_level) return;
   const int frameCount = m_level->getFrameCount();
   if (frameCount == 0) return;
   //------------------------------------------
