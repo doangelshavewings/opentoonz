@@ -95,6 +95,161 @@ TRaster32P fitTextureToSize(const TRaster32P &ras, int maxTextureSize) {
   return texture;
 }
 
+//-----------------------------------------------------------------------------
+
+int previousPowerOfTwo(int value) {
+  int power = 1;
+  while (power * 2 <= value) power *= 2;
+  return power;
+}
+
+int nearestPowerOfTwo(int value) {
+  const int lower = previousPowerOfTwo(value);
+  const int upper = lower * 2;
+  return (value - lower <= upper - value) ? lower : upper;
+}
+
+// The offscreen contexts used for renders, previews and level icons can be
+// OpenGL 1.x, where a texture side that is not a power of two is rejected and
+// the stamp silently draws untextured.  Stamp geometry is taken from the
+// source image, not from the texture, so rounding the sides here changes how
+// finely a stamp is sampled and not how it is placed or how wide it is.
+TDimension getPatternTextureSize(const TDimension &sourceSize,
+                                 int maxTextureSize) {
+  const int maxSide = std::max(2, previousPowerOfTwo(maxTextureSize));
+  return TDimension(
+      std::min(std::max(2, nearestPowerOfTwo(sourceSize.lx)), maxSide),
+      std::min(std::max(2, nearestPowerOfTwo(sourceSize.ly)), maxSide));
+}
+
+// Returns ras itself when it can already be uploaded as it is.
+TRaster32P makePatternTexture(const TRaster32P &ras, int maxTextureSize) {
+  if (!ras || ras->getLx() < 2 || ras->getLy() < 2) return TRaster32P();
+
+  const TDimension textureSize =
+      getPatternTextureSize(ras->getSize(), maxTextureSize);
+  if (textureSize == ras->getSize()) return ras;
+
+  TRaster32P texture(textureSize);
+  TScale textureScale((double)textureSize.lx / ras->getLx(),
+                      (double)textureSize.ly / ras->getLy());
+  TRop::resample(texture, ras, textureScale);
+  return texture;
+}
+
+// Texture modulation can only scale a texture, so a color function's additive
+// part - the onion skin tint - has to be applied to the pixels themselves.
+TRaster32P applyColorFunction(const TRaster32P &texture,
+                              const TColorFunction *cf) {
+  TRaster32P tinted(texture->getSize());
+  texture->lock();
+  tinted->lock();
+  for (int y = 0; y < texture->getLy(); ++y) {
+    const TPixel32 *src = texture->pixels(y);
+    TPixel32 *dst       = tinted->pixels(y);
+    for (int x = 0; x < texture->getLx(); ++x) dst[x] = (*cf)(src[x]);
+  }
+  tinted->unlock();
+  texture->unlock();
+  return tinted;
+}
+
+bool sameParameters(const TColorFunction::Parameters &a,
+                    const TColorFunction::Parameters &b) {
+  return a.m_mR == b.m_mR && a.m_mG == b.m_mG && a.m_mB == b.m_mB &&
+         a.m_mM == b.m_mM && a.m_cR == b.m_cR && a.m_cG == b.m_cG &&
+         a.m_cB == b.m_cB && a.m_cM == b.m_cM;
+}
+
+// Textures ready for glTexImage2D: sides rounded to powers of two, kept within
+// the limit reported by the context in use, and carrying the render color
+// function.  Building one costs a resample and a pass over the image, and the
+// same few are asked for again on every repaint, so they are kept until the
+// pattern is loaded again.
+class PatternTextureCache  // singleton
+{
+public:
+  static PatternTextureCache *instance() {
+    static PatternTextureCache singleton;
+    return &singleton;
+  }
+
+  TRaster32P getTexture(const std::string &name, const TFrameId &fid,
+                        const TRaster32P &source, int maxTextureSize,
+                        const TColorFunction *cf) {
+    TColorFunction::Parameters parameters;
+    if (cf) cf->getParameters(parameters);
+
+    QMutexLocker sl(&m_mutex);
+
+    for (const Entry &entry : m_entries)
+      if (entry.m_name == name && entry.m_fid == fid &&
+          entry.m_maxTextureSize == maxTextureSize &&
+          entry.m_hasColorFunction == (cf != 0) &&
+          sameParameters(entry.m_parameters, parameters))
+        return entry.m_texture;
+
+    TRaster32P texture = makePatternTexture(source, maxTextureSize);
+    if (!texture) return texture;
+    if (cf) texture = applyColorFunction(texture, cf);
+
+    // Onion skin asks for one variant per ghost, so the cache holds several
+    // entries per frame.  Dropping the oldest ones keeps a long session, and a
+    // pattern drawn from large sources, bounded.
+    const int textureByteCount = texture->getLx() * texture->getLy() * 4;
+    while (!m_entries.empty() &&
+           ((int)m_entries.size() >= c_maxEntryCount ||
+            m_byteCount + textureByteCount > c_maxByteCount))
+      removeEntry(0);
+
+    Entry entry;
+    entry.m_name             = name;
+    entry.m_fid              = fid;
+    entry.m_maxTextureSize   = maxTextureSize;
+    entry.m_hasColorFunction = (cf != 0);
+    entry.m_parameters       = parameters;
+    entry.m_texture          = texture;
+    m_entries.push_back(entry);
+    m_byteCount += textureByteCount;
+
+    return texture;
+  }
+
+  void clear(const std::string &name) {
+    QMutexLocker sl(&m_mutex);
+    for (int i = (int)m_entries.size() - 1; i >= 0; --i)
+      if (m_entries[i].m_name == name) removeEntry(i);
+  }
+
+private:
+  struct Entry {
+    std::string m_name;
+    TFrameId m_fid;
+    int m_maxTextureSize;
+    bool m_hasColorFunction;
+    TColorFunction::Parameters m_parameters;
+    TRaster32P m_texture;
+  };
+
+  static const int c_maxEntryCount = 32;
+  static const int c_maxByteCount  = 64 * 1024 * 1024;
+
+  TThread::Mutex m_mutex;
+  std::vector<Entry> m_entries;
+  int m_byteCount;
+
+  PatternTextureCache() : m_byteCount(0) {}
+
+  // the caller holds m_mutex
+  void removeEntry(int index) {
+    const TRaster32P &texture = m_entries[index].m_texture;
+    m_byteCount -= texture->getLx() * texture->getLy() * 4;
+    m_entries.erase(m_entries.begin() + index);
+  }
+};
+
+//-----------------------------------------------------------------------------
+
 // A pattern stamp is drawn as a quad reaching thickness * (lx / ly, 1) from
 // its point on the stroke, and is then rotated, so it can extend well past the
 // stroke outline.  Render tiles and level icons are cut from the image bbox
@@ -1153,6 +1308,10 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
   // button l'eventuale livello
   m_level = TLevelP();
 
+  // the textures built for the previous content are no longer valid
+  PatternTextureCache::instance()->clear(m_name);
+  PatternTextureCache::instance()->clear(patternName);
+
   // aggiorno il nome
   m_name = patternName;
 
@@ -1316,13 +1475,6 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
-  // Modulating with the render color function keeps the stamps in step with
-  // column filters, column opacity and onion skin fading, which every other
-  // stroke style already follows.  Modulation can only scale a texture, so a
-  // color function's additive term - the onion skin tint - is not applied.
-  TPixel32 stampColor = TPixel32::White;
-  if (rd.m_cf) stampColor = (*rd.m_cf)(stampColor);
-
   // Since changing textures is expensive, keep the outer loop on source
   // frames.  Starting from the stroke's saved offset and advancing by its
   // saved step lets each stamp render the intended cycle frame.
@@ -1337,10 +1489,11 @@ void TRasterImagePatternStrokeStyle::drawStroke(
     if (ri) ras = ri->getRaster();
     if (!ras) continue;
 
-    // Some systems expose a smaller maximum texture size than the storage cap
-    // used when the style was loaded.  Downsample only for those systems and
-    // keep the original image geometry for the stroke transformation.
-    TRaster32P texture = fitTextureToSize(ras, maxTextureSize);
+    // The upload wants power of two sides, at most what this context allows,
+    // and the color function baked in.  The stroke geometry below keeps using
+    // the source image, so the stamp is placed and sized as it was drawn.
+    TRaster32P texture = PatternTextureCache::instance()->getTexture(
+        m_name, currentFrameIt->first, ras, maxTextureSize, rd.m_cf);
     if (!texture) continue;
     TextureInfoForGL texInfo;
     TRasterP texImage = prepareTexture(texture, texInfo);
@@ -1364,8 +1517,7 @@ void TRasterImagePatternStrokeStyle::drawStroke(
       double rx = ras->getLx();
       double ry = ras->getLy();
 
-      glColor4d(stampColor.r / 255.0, stampColor.g / 255.0,
-                stampColor.b / 255.0, stampColor.m / 255.0);
+      glColor4d(1, 1, 1, 1);
 
       glBegin(QUAD_PRIMITIVE);
       glTexCoord2d(0, 0);
