@@ -74,6 +74,11 @@ namespace {
 // consuming excessive memory while preserving its aspect ratio.
 constexpr int kMaxRasterPatternTextureSize = 2048;
 
+// Textures are built at this multiple of the size a stamp covers on the
+// target, so that a stamp keeps detail in reserve rather than turning soft at
+// the size it is usually drawn at.
+constexpr int kRasterPatternTextureDetail = 2;
+
 // Returns ras unchanged when it fits.  Otherwise, resamples it uniformly to
 // fit maxTextureSize.  A caller that has a current GL context can pass
 // GL_MAX_TEXTURE_SIZE to make the source safe for that hardware.
@@ -114,20 +119,31 @@ int nearestPowerOfTwo(int value) {
 // the stamp silently draws untextured.  Stamp geometry is taken from the
 // source image, not from the texture, so rounding the sides here changes how
 // finely a stamp is sampled and not how it is placed or how wide it is.
+//
+// stampHeight is how many pixels the stamp covers where it is being drawn.
+// Sampling a source down to it keeps the whole image in the result: point
+// sampling a full sized texture into the two or three pixels a stamp gets in
+// a level icon picks a couple of texels and drops everything else, which is
+// why a drawing made of stamps used to reach its column icon as a dot.
 TDimension getPatternTextureSize(const TDimension &sourceSize,
-                                 int maxTextureSize) {
+                                 double stampHeight, int maxTextureSize) {
   const int maxSide = std::max(2, previousPowerOfTwo(maxTextureSize));
+
+  double shrink = 1.0;
+  if (stampHeight > 0 && stampHeight < sourceSize.ly)
+    shrink = stampHeight / (double)sourceSize.ly;
+
   return TDimension(
-      std::min(std::max(2, nearestPowerOfTwo(sourceSize.lx)), maxSide),
-      std::min(std::max(2, nearestPowerOfTwo(sourceSize.ly)), maxSide));
+      std::min(std::max(2, nearestPowerOfTwo((int)(sourceSize.lx * shrink))),
+               maxSide),
+      std::min(std::max(2, nearestPowerOfTwo((int)(sourceSize.ly * shrink))),
+               maxSide));
 }
 
 // Returns ras itself when it can already be uploaded as it is.
-TRaster32P makePatternTexture(const TRaster32P &ras, int maxTextureSize) {
+TRaster32P makePatternTexture(const TRaster32P &ras,
+                              const TDimension &textureSize) {
   if (!ras || ras->getLx() < 2 || ras->getLy() < 2) return TRaster32P();
-
-  const TDimension textureSize =
-      getPatternTextureSize(ras->getSize(), maxTextureSize);
   if (textureSize == ras->getSize()) return ras;
 
   TRaster32P texture(textureSize);
@@ -161,11 +177,11 @@ bool sameParameters(const TColorFunction::Parameters &a,
          a.m_cB == b.m_cB && a.m_cM == b.m_cM;
 }
 
-// Textures ready for glTexImage2D: sides rounded to powers of two, kept within
-// the limit reported by the context in use, and carrying the render color
-// function.  Building one costs a resample and a pass over the image, and the
-// same few are asked for again on every repaint, so they are kept until the
-// pattern is loaded again.
+// Textures ready for glTexImage2D: sides rounded to powers of two, sampled
+// down to the size the stamp has where it is drawn, and carrying the render
+// color function.  Building one costs a resample and a pass over the image,
+// and the same few are asked for again on every repaint, so they are kept
+// until the pattern is loaded again.
 class PatternTextureCache  // singleton
 {
 public:
@@ -175,7 +191,8 @@ public:
   }
 
   TRaster32P getTexture(const std::string &name, const TFrameId &fid,
-                        const TRaster32P &source, int maxTextureSize,
+                        const TRaster32P &source,
+                        const TDimension &textureSize,
                         const TColorFunction *cf) {
     TColorFunction::Parameters parameters;
     if (cf) cf->getParameters(parameters);
@@ -184,12 +201,12 @@ public:
 
     for (const Entry &entry : m_entries)
       if (entry.m_name == name && entry.m_fid == fid &&
-          entry.m_maxTextureSize == maxTextureSize &&
+          entry.m_textureSize == textureSize &&
           entry.m_hasColorFunction == (cf != 0) &&
           sameParameters(entry.m_parameters, parameters))
         return entry.m_texture;
 
-    TRaster32P texture = makePatternTexture(source, maxTextureSize);
+    TRaster32P texture = makePatternTexture(source, textureSize);
     if (!texture) return texture;
     if (cf) texture = applyColorFunction(texture, cf);
 
@@ -205,7 +222,7 @@ public:
     Entry entry;
     entry.m_name             = name;
     entry.m_fid              = fid;
-    entry.m_maxTextureSize   = maxTextureSize;
+    entry.m_textureSize      = textureSize;
     entry.m_hasColorFunction = (cf != 0);
     entry.m_parameters       = parameters;
     entry.m_texture          = texture;
@@ -225,7 +242,7 @@ private:
   struct Entry {
     std::string m_name;
     TFrameId m_fid;
-    int m_maxTextureSize;
+    TDimension m_textureSize;
     bool m_hasColorFunction;
     TColorFunction::Parameters m_parameters;
     TRaster32P m_texture;
@@ -250,14 +267,16 @@ private:
 
 //-----------------------------------------------------------------------------
 
-// A pattern stamp is drawn as a quad reaching thickness * (lx / ly, 1) from
-// its point on the stroke, and is then rotated, so it can extend well past the
-// stroke outline.  Render tiles and level icons are cut from the image bbox
-// while the viewer draws without clipping to it, so a bbox that ignores the
-// stamps loses them everywhere except on canvas.
-double getPatternStampMargin(const TStroke *stroke, double maxAspectRatio) {
-  const double thickness = const_cast<TStroke *>(stroke)->getMaxThickness();
-  return thickness * std::sqrt(maxAspectRatio * maxAspectRatio + 1.0);
+// Every stamp is centered on a point of the centerline and reaches
+// thickness * (lx / ly, 1) from it before being rotated, so growing the
+// centerline box by that reach covers all of them.  Render tiles and level
+// icons are cut from the image bbox while the viewer draws without clipping to
+// it, so a bbox that ignores the stamps loses them everywhere except on
+// canvas, and one that overshoots shrinks the drawing inside its icon.
+TRectD getPatternStampBBox(const TStroke *stroke, double maxAspectRatio) {
+  const double reach = const_cast<TStroke *>(stroke)->getMaxThickness() *
+                       std::sqrt(maxAspectRatio * maxAspectRatio + 1.0);
+  return stroke->getCenterlineBBox().enlarge(reach);
 }
 
 TLevel::Iterator getPatternFrameIterator(const TLevelP &level,
@@ -1459,6 +1478,20 @@ void TRasterImagePatternStrokeStyle::drawStroke(
   glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
   if (maxTextureSize < 2) maxTextureSize = kMaxRasterPatternTextureSize;
 
+  // How tall a stamp is, in pixels, where it is being drawn: a stamp reaches
+  // its thickness above and below its point on the stroke.  A stamp shrunk
+  // into a level icon or a zoomed out view covers a couple of pixels, and a
+  // texture left at source size would be point sampled down to them.
+  glPushMatrix();
+  tglMultMatrix(rd.m_aff);
+  const double pixelSize2 = tglGetPixelSize2();
+  glPopMatrix();
+  const double stampHeight =
+      (pixelSize2 > 0)
+          ? 2.0 * const_cast<TStroke *>(stroke)->getMaxThickness() /
+                std::sqrt(pixelSize2)
+          : 0.0;
+
   GLuint texId;
   glGenTextures(1, &texId);
 
@@ -1490,10 +1523,14 @@ void TRasterImagePatternStrokeStyle::drawStroke(
     if (!ras) continue;
 
     // The upload wants power of two sides, at most what this context allows,
-    // and the color function baked in.  The stroke geometry below keeps using
-    // the source image, so the stamp is placed and sized as it was drawn.
+    // no more detail than the stamp can show, and the color function baked in.
+    // The stroke geometry below keeps using the source image, so the stamp is
+    // placed and sized as it was drawn.
+    const TDimension textureSize = getPatternTextureSize(
+        ras->getSize(), kRasterPatternTextureDetail * stampHeight,
+        maxTextureSize);
     TRaster32P texture = PatternTextureCache::instance()->getTexture(
-        m_name, currentFrameIt->first, ras, maxTextureSize, rd.m_cf);
+        m_name, currentFrameIt->first, ras, textureSize, rd.m_cf);
     if (!texture) continue;
     TextureInfoForGL texInfo;
     TRasterP texImage = prepareTexture(texture, texInfo);
@@ -1615,11 +1652,10 @@ TRectD TRasterImagePatternStrokeStyle::getStrokeBBox(
         std::max(maxAspectRatio, ras->getLx() / (double)ras->getLy());
   }
 
-  // The historical margin stays as a lower bound, so strokes whose stamps
-  // already fit keep the bounding box they have always had.
-  const double margin = std::max(std::max(rect.getLx(), rect.getLy()) * 0.25,
-                                 getPatternStampMargin(stroke, maxAspectRatio));
-  return rect.enlarge(margin);
+  // The historical box stays in the union, so a stroke whose stamps already
+  // fit keeps the bounding box it has always had.
+  TRectD rect2 = rect.enlarge(std::max(rect.getLx(), rect.getLy()) * 0.25);
+  return rect2 + getPatternStampBBox(stroke, maxAspectRatio);
 }
 
 //*************************************************************************************
