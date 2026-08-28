@@ -191,8 +191,7 @@ public:
   }
 
   TRaster32P getTexture(const std::string &name, const TFrameId &fid,
-                        const TRaster32P &source,
-                        const TDimension &textureSize,
+                        const TRaster32P &source, const TDimension &textureSize,
                         const TColorFunction *cf) {
     TColorFunction::Parameters parameters;
     if (cf) cf->getParameters(parameters);
