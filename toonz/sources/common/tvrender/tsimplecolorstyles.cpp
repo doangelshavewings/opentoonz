@@ -123,18 +123,35 @@ void trimPatternFramesToContent(const TLevelP &level) {
   }
   if (content.isEmpty()) return;
 
+  // A level whose artwork already fills every frame is left exactly as it is,
+  // so a source with no margins keeps rendering as it always has.
+  bool isPadded = false;
+  for (TLevel::Iterator it = level->begin(); it != level->end() && !isPadded;
+       ++it) {
+    TRasterImageP ri = it->second;
+    if (!ri) continue;
+    TRaster32P ras = ri->getRaster();
+    if (ras && content != ras->getBounds()) isPadded = true;
+  }
+  if (!isPadded) return;
+
+  // Keep one transparent pixel around the artwork.  Stamps are drawn through a
+  // linear filter that samples half a texel past the edge of the texture, and
+  // the trimmed artwork would otherwise sit right on it.
+  const TRect trimRect = content.enlarge(1);
+
   for (TLevel::Iterator it = level->begin(); it != level->end(); ++it) {
     TRasterImageP ri = it->second;
     if (!ri) continue;
     TRaster32P ras = ri->getRaster();
-    if (!ras || content == ras->getBounds()) continue;
+    if (!ras) continue;
 
-    TRaster32P trimmed(content.getSize());
+    TRaster32P trimmed(trimRect.getSize());
     trimmed->clear();
 
-    TRect source = content * ras->getBounds();
+    TRect source = trimRect * ras->getBounds();
     if (!source.isEmpty()) {
-      TRect destination = source - content.getP00();
+      TRect destination = source - trimRect.getP00();
       trimmed->extract(destination)->copy(ras->extract(source));
     }
     ri->setRaster(trimmed);
@@ -1543,10 +1560,11 @@ void TRasterImagePatternStrokeStyle::drawStroke(
   glBindTexture(GL_TEXTURE_2D, texId);
 
   // The texture covers the quad exactly once, so wrapping is only ever reached
-  // by the linear filter half a texel past the edge.  Trimmed artwork touches
-  // that edge, and repeating it there would bring in the opposite side.
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  // by the linear filter half a texel past the edge.  Trimmed artwork sits
+  // close to that edge, and repeating it there would bring in the opposite
+  // side; the trim leaves a transparent pixel for the clamp to sample.
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
