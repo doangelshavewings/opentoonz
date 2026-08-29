@@ -100,6 +100,47 @@ TRaster32P fitTextureToSize(const TRaster32P &ras, int maxTextureSize) {
   return texture;
 }
 
+// Stamp size and the distance between stamps are both measured from the source
+// image, so artwork sitting in a large transparent canvas is stamped small and
+// spaced out by its own padding.  The vector Trail style measures the artwork
+// itself - img->getBBox() - and has neither problem, so trim the canvas down to
+// what is actually drawn on it.
+//
+// The trim uses the whole level's content rather than each frame's, so frames
+// that grow, shrink or travel across the canvas keep doing so relative to one
+// another.  That movement is what a cycling Trail stamp is made of, and
+// measuring each frame on its own would flatten it.
+void trimPatternFramesToContent(const TLevelP &level) {
+  TRect content;
+  for (TLevel::Iterator it = level->begin(); it != level->end(); ++it) {
+    TRasterImageP ri = it->second;
+    if (!ri) continue;
+    TRaster32P ras = ri->getRaster();
+    if (!ras) continue;
+    TRect frameContent;
+    TRop::computeBBox(ras, frameContent);
+    content += frameContent;
+  }
+  if (content.isEmpty()) return;
+
+  for (TLevel::Iterator it = level->begin(); it != level->end(); ++it) {
+    TRasterImageP ri = it->second;
+    if (!ri) continue;
+    TRaster32P ras = ri->getRaster();
+    if (!ras || content == ras->getBounds()) continue;
+
+    TRaster32P trimmed(content.getSize());
+    trimmed->clear();
+
+    TRect source = content * ras->getBounds();
+    if (!source.isEmpty()) {
+      TRect destination = source - content.getP00();
+      trimmed->extract(destination)->copy(ras->extract(source));
+    }
+    ri->setRaster(trimmed);
+  }
+}
+
 //-----------------------------------------------------------------------------
 
 int previousPowerOfTwo(int value) {
@@ -1396,6 +1437,11 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
   }
   // cancello il contesto offline (se e' stato creato)
   delete glContext;
+
+  trimPatternFramesToContent(m_level);
+
+  // the stamp positions the props hold were computed for the previous content
+  updateVersionNumber();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1496,8 +1542,11 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   glBindTexture(GL_TEXTURE_2D, texId);
 
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  // The texture covers the quad exactly once, so wrapping is only ever reached
+  // by the linear filter half a texel past the edge.  Trimmed artwork touches
+  // that edge, and repeating it there would bring in the opposite side.
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
