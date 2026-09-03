@@ -606,6 +606,7 @@ ToonzVectorBrushTool::ToonzVectorBrushTool(std::string name, int targetType)
   m_trailCycle.addValue(L"Off");
   m_trailCycle.addValue(L"Forward");
   m_trailCycle.addValue(L"Backward");
+  m_trailCycle.addValue(L"Repeat");
   // A saved index from a build with more cycle modes must not throw here.
   m_trailCycle.setIndex(std::min(std::max((int)V_VectorBrushTrailCycle, 0),
                                  (int)m_trailCycle.getRange().size() - 1));
@@ -716,6 +717,7 @@ void ToonzVectorBrushTool::updateTranslation() {
   m_trailCycle.setItemUIName(L"Off", tr("Off"));
   m_trailCycle.setItemUIName(L"Forward", tr("Forward"));
   m_trailCycle.setItemUIName(L"Backward", tr("Backward"));
+  m_trailCycle.setItemUIName(L"Repeat", tr("Repeat"));
   m_snapSensitivity.setItemUIName(LOW_WSTR, tr("Low"));
   m_snapSensitivity.setItemUIName(MEDIUM_WSTR, tr("Med"));
   m_snapSensitivity.setItemUIName(HIGH_WSTR, tr("High"));
@@ -896,7 +898,11 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
         trailFrameCount = trailStyle->getLevelFrameCount();
       if (!m_frameRange.getIndex() && m_trailCycle.getIndex() != 0 &&
           trailFrameCount > 1) {
-        m_trailFrameStep = m_trailCycle.getIndex() == 2 ? -1 : 1;
+        // Forward advances the cycle, Backward backtracks it, Repeat holds
+        // it - and a Repeat stroke stores step 0, freezing its frame along
+        // the whole stroke.
+        const int cycleIndex = m_trailCycle.getIndex();
+        m_trailFrameStep     = cycleIndex == 2 ? -1 : cycleIndex == 3 ? 0 : 1;
 
         // All cycle modes share one position in the source level, so cycling
         // forward, backtracking and freezing act on the same cursor.  Only a

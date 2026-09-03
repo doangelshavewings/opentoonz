@@ -1576,10 +1576,13 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   // Since changing textures is expensive, keep the outer loop on source
   // frames.  Starting from the stroke's saved offset and advancing by its
-  // saved step lets each stamp render the intended cycle frame.
-  TLevel::Iterator frameIt = getPatternFrameIterator(m_level, stroke);
-  const int frameStep      = stroke->outlineOptions().m_patternFrameStep;
-  for (int i = 0; i < (int)size && i < frameCount; ++i) {
+  // saved step lets each stamp render the intended cycle frame.  A stroke
+  // whose step lands on the same frame every time - a frozen Repeat stroke -
+  // has one frame to upload, drawn at every stamp.
+  TLevel::Iterator frameIt     = getPatternFrameIterator(m_level, stroke);
+  const int frameStep          = stroke->outlineOptions().m_patternFrameStep;
+  const int distinctFrameCount = (frameStep % frameCount == 0) ? 1 : frameCount;
+  for (int i = 0; i < (int)size && i < distinctFrameCount; ++i) {
     TLevel::Iterator currentFrameIt = frameIt;
     advancePatternFrameIterator(frameIt, m_level, frameStep);
 
@@ -1612,7 +1615,7 @@ void TRasterImagePatternStrokeStyle::drawStroke(
                  texImage->getRawData());
     CHECK_GL_ERROR
 
-    for (int j = i; j < (int)size; j += frameCount) {
+    for (int j = i; j < (int)size; j += distinctFrameCount) {
       TAffine aff = rd.m_aff * transformations[j];
       glPushMatrix();
       tglMultMatrix(aff);
@@ -1919,12 +1922,14 @@ TLevel::Iterator getPatternFrameIterator(const TLevelP &level,
   return it;
 }
 
+// A step of zero holds the iterator still: the stroke shows one frame along
+// its whole length, which is how the brush's Repeat cycle mode freezes a
+// stamp.
 void advancePatternFrameIterator(TLevel::Iterator &it, const TLevelP &level,
                                  int step) {
   const int frameCount = level->getFrameCount();
   assert(frameCount > 0);
 
-  if (step == 0) step = 1;
   step %= frameCount;
   if (step < 0) step += frameCount;
 
