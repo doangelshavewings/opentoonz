@@ -557,7 +557,9 @@ ToonzVectorBrushTool::ToonzVectorBrushTool(std::string name, int targetType)
     , m_trailFrameOffset()
     , m_trailFrameCount()
     , m_trailFrameStep(1)
-    , m_trailStyle()
+    , m_trailFrameLast()
+    , m_trailStyleId(-1)
+    , m_trailPalette()
     , m_minThick()
     , m_maxThick()
     , m_col()
@@ -575,6 +577,7 @@ ToonzVectorBrushTool::ToonzVectorBrushTool(std::string name, int targetType)
     , m_presetsLoaded()
     , m_firstFrameRange(true)
     , m_trailCycleActive()
+    , m_trailHasStamped()
     , m_propertyUpdating() {
   bind(targetType);
 
@@ -603,7 +606,9 @@ ToonzVectorBrushTool::ToonzVectorBrushTool(std::string name, int targetType)
   m_trailCycle.addValue(L"Off");
   m_trailCycle.addValue(L"Forward");
   m_trailCycle.addValue(L"Backward");
-  m_trailCycle.setIndex(V_VectorBrushTrailCycle);
+  // A saved index from a build with more cycle modes must not throw here.
+  m_trailCycle.setIndex(std::min(std::max((int)V_VectorBrushTrailCycle, 0),
+                                 (int)m_trailCycle.getRange().size() - 1));
 
   m_prop[0].bind(m_snap);
 
@@ -886,40 +891,48 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
       if (TVectorImagePatternStrokeStyle *trailStyle =
               dynamic_cast<TVectorImagePatternStrokeStyle *>(cs))
         trailFrameCount = trailStyle->getLevelFrameCount();
-      else if (TRasterImagePatternStrokeStyle *trailStyle =
-                   dynamic_cast<TRasterImagePatternStrokeStyle *>(cs))
+      else if (TRasterImagePatternStrokeStyle* trailStyle =
+                   dynamic_cast<TRasterImagePatternStrokeStyle*>(cs))
         trailFrameCount = trailStyle->getLevelFrameCount();
       if (!m_frameRange.getIndex() && m_trailCycle.getIndex() != 0 &&
           trailFrameCount > 1) {
         m_trailFrameStep = m_trailCycle.getIndex() == 2 ? -1 : 1;
-        if (m_trailStyle != cs || m_trailFrameCount != trailFrameCount) {
-          m_trailStyle       = cs;
-          m_trailFrameCount  = trailFrameCount;
+
+        // All cycle modes share one position in the source level, so cycling
+        // forward, backtracking and freezing act on the same cursor.  Only a
+        // different Trail style starts the cycle over; switching modes or
+        // drawing with other styles in between leaves the position alone.
+        const TPalette* palette = app->getCurrentPalette()
+                                      ? app->getCurrentPalette()->getPalette()
+                                      : nullptr;
+        if (m_trailStyleId != m_styleId || m_trailPalette != palette ||
+            m_trailFrameCount != trailFrameCount) {
+          m_trailStyleId    = m_styleId;
+          m_trailPalette    = palette;
+          m_trailFrameCount = trailFrameCount;
+          m_trailHasStamped = false;
+        }
+
+        if (m_trailHasStamped) {
+          m_trailFrameOffset =
+              (m_trailFrameLast + m_trailFrameStep) % trailFrameCount;
+          if (m_trailFrameOffset < 0) m_trailFrameOffset += trailFrameCount;
+        } else {
           m_trailFrameOffset = m_trailFrameStep < 0 ? trailFrameCount - 1 : 0;
         }
-        m_trailFrameOffset %= trailFrameCount;
-        if (m_trailFrameOffset < 0) m_trailFrameOffset += trailFrameCount;
         m_trailCycleActive = true;
-      } else {
-        m_trailStyle      = 0;
-        m_trailFrameCount = 0;
-        m_trailFrameStep  = 1;
       }
     } else {
-      m_styleId = 1;
-      m_currentColor = TPixel32::Black;
+      m_styleId          = 1;
+      m_currentColor     = TPixel32::Black;
       m_trailCycleActive = false;
-      m_trailStyle       = 0;
-      m_trailFrameCount  = 0;
-      m_trailFrameStep   = 1;
     }
-    
+
     m_active = true;
-    
-    return; // painting has begun
+
+    return;  // painting has begun
   }
-  
-  
+
   // end painting //////////////////////////
   
   m_active = false;
@@ -1108,11 +1121,8 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
     TUndoManager::manager()->endBlock();
 
     if (m_trailCycleActive && !strokes.empty()) {
-      if (m_trailFrameCount > 1) {
-        m_trailFrameOffset =
-            (m_trailFrameOffset + m_trailFrameStep) % m_trailFrameCount;
-        if (m_trailFrameOffset < 0) m_trailFrameOffset += m_trailFrameCount;
-      }
+      m_trailFrameLast  = m_trailFrameOffset;
+      m_trailHasStamped = true;
     }
   }
   
@@ -1764,13 +1774,6 @@ bool ToonzVectorBrushTool::onPropertyChanged(std::string propertyName) {
 
   if (frameIndex == 0) resetFrameRange();
 
-  if (propertyName == m_trailCycle.getName()) {
-    m_trailStyle       = 0;
-    m_trailFrameOffset = 0;
-    m_trailFrameCount  = 0;
-    m_trailFrameStep   = 1;
-  }
-
   switch (snapSensitivityIndex) {
   case 0:
     m_minDistance2 = SNAPPING_LOW;
@@ -2142,7 +2145,9 @@ void ToonzVectorBrushTool::loadLastBrush() {
 
   // Properties not tracked with preset
   m_frameRange.setIndex(V_VectorBrushFrameRange);
-  m_trailCycle.setIndex(V_VectorBrushTrailCycle);
+  // A saved index from a build with more cycle modes must not throw here.
+  m_trailCycle.setIndex(std::min(std::max((int)V_VectorBrushTrailCycle, 0),
+                                 (int)m_trailCycle.getRange().size() - 1));
   m_snap.setValue(V_VectorBrushSnap ? 1 : 0);
   m_snapSensitivity.setIndex(V_VectorBrushSnapSensitivity);
   m_assistants.setValue(V_VectorBrushAssistants ? 1 : 0);

@@ -35,7 +35,7 @@
 
 class TTileSetCM32;
 class TTileSaverCM32;
-class TColorStyle;
+class TPalette;
 class RasterStrokeGenerator;
 class BluredBrush;
 
@@ -247,7 +247,9 @@ protected:
   int m_trailFrameOffset;
   int m_trailFrameCount;
   int m_trailFrameStep;
-  const TColorStyle *m_trailStyle;
+  int m_trailFrameLast;
+  int m_trailStyleId;
+  const TPalette* m_trailPalette;  // identity only, never dereferenced
   double m_minThick, m_maxThick;
 
   // for snapping and framerange
@@ -266,7 +268,7 @@ protected:
       m_presetsManager;  //!< Manager for presets of this tool instance
 
   bool m_active, m_firstTime, m_isPath, m_presetsLoaded, m_firstFrameRange,
-      m_trailCycleActive;
+      m_trailCycleActive, m_trailHasStamped;
 
   bool m_propertyUpdating;
   double m_cameraDpi;
