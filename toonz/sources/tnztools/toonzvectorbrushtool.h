@@ -249,7 +249,7 @@ protected:
   int m_trailFrameStep;
   int m_trailFrameLast;
   int m_trailStyleId;
-  const TPalette* m_trailPalette;  // identity only, never dereferenced
+  const TPalette *m_trailPalette;  // identity only, never dereferenced
   double m_minThick, m_maxThick;
 
   // for snapping and framerange

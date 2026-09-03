@@ -893,8 +893,8 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
       if (TVectorImagePatternStrokeStyle *trailStyle =
               dynamic_cast<TVectorImagePatternStrokeStyle *>(cs))
         trailFrameCount = trailStyle->getLevelFrameCount();
-      else if (TRasterImagePatternStrokeStyle* trailStyle =
-                   dynamic_cast<TRasterImagePatternStrokeStyle*>(cs))
+      else if (TRasterImagePatternStrokeStyle *trailStyle =
+                   dynamic_cast<TRasterImagePatternStrokeStyle *>(cs))
         trailFrameCount = trailStyle->getLevelFrameCount();
       if (!m_frameRange.getIndex() && m_trailCycle.getIndex() != 0 &&
           trailFrameCount > 1) {
@@ -908,7 +908,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
         // forward, backtracking and freezing act on the same cursor.  Only a
         // different Trail style starts the cycle over; switching modes or
         // drawing with other styles in between leaves the position alone.
-        const TPalette* palette = app->getCurrentPalette()
+        const TPalette *palette = app->getCurrentPalette()
                                       ? app->getCurrentPalette()->getPalette()
                                       : nullptr;
         if (m_trailStyleId != m_styleId || m_trailPalette != palette ||
