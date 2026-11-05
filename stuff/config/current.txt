@@ -1933,6 +1933,12 @@
   <item>"STD_alphaDistanceGradientFx.power" "Power" </item>
   <item>"STD_alphaDistanceGradientFx.blurMode" "Blur Mode" </item>
   <item>"STD_alphaDistanceGradientFx.blurSize" "Blur Size" </item>
+  <item>"STD_celBoundaryBlurFx" "Cel Boundary Blur" </item>
+  <item>"STD_celBoundaryBlurFx.amount" "Blur Amount" </item>
+  <item>"STD_celBoundaryBlurFx.smoothness" "Blur Smoothness" </item>
+  <item>"STD_celBoundaryBlurFx.repeats" "Number of Repeat" </item>
+  <item>"STD_celBoundaryBlurFx.bias" "Bias Direction" </item>
+  <item>"STD_celBoundaryBlurFx.legacy" "Legacy" </item>
 
 </stringtable> 
 

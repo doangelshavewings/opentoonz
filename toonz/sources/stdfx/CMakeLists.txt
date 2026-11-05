@@ -107,6 +107,8 @@ set(SOURCES
     blurfx.cpp
     bodyhighlightfx.cpp
     tonehighlightfx.cpp
+    celboundaryblurfx.cpp
+    celblur.cpp
     alphadistancegradientfx.cpp
     celcolorexpandfx.cpp
     starglowfx.cpp
