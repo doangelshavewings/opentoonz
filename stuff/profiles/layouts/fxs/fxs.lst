@@ -186,6 +186,7 @@
     STD_iwa_TangentFlowFx
     STD_iwa_MotionFlowFx
     STD_naru_LazyBrushFx
+    STD_printProcessFx
   </Stylize>
   <Toonz_Level>
     STD_artContourFx

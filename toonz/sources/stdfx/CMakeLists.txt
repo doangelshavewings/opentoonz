@@ -108,6 +108,7 @@ set(SOURCES
     blurfx.cpp
     bodyhighlightfx.cpp
     tonehighlightfx.cpp
+    printprocessfx.cpp
     celedgelinesfx.cpp
     celboilfx.cpp
     celcolorkeyfx.cpp
