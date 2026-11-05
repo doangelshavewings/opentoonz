@@ -139,6 +139,7 @@
   </Light>
   <Matte>
     STD_celColorKeepFx
+    STD_celColorExpandFx
     STD_erodeDilateFx
     STD_hsvKeyFx
     inFx

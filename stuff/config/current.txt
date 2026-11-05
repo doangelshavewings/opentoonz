@@ -1918,6 +1918,8 @@
   <item>"STD_starGlowFx.diagonalColor" "Diagonal Color" </item>
   <item>"STD_starGlowFx.diagonalUseRamp" "Diagonal Use Ramp" </item>
   <item>"STD_starGlowFx.diagonalRamp" "Diagonal Ramp" </item>
+  <item>"STD_celColorExpandFx" "Cel Color Expand" </item>
+  <item>"STD_celColorExpandFx.radius" "Search Radius" </item>
 
 </stringtable> 
 
