@@ -1779,6 +1779,18 @@
   <item>"STD_naru_LazyBrushFx.log_scale" 	"LoG Scale"		</item>
   <item>"STD_naru_LazyBrushFx.scr_type" 	"Scribble Type"		</item>
   <item>"STD_naru_LazyBrushFx.lambda"	 	"Scribble Softness"		</item>
+  <item>"STD_lightShadingFx" 	"Light Shading" 		</item>
+  <item>"STD_lightShadingFx.mode" 	"Mode" 			</item>
+  <item>"STD_lightShadingFx.lightPoint" 	"Light Point" 		</item>
+  <item>"STD_lightShadingFx.lightRadius" 	"Light Radius" 		</item>
+  <item>"STD_lightShadingFx.lightAngle" 	"Light Angle" 		</item>
+  <item>"STD_lightShadingFx.shadeColor" 	"Shade Color" 		</item>
+  <item>"STD_lightShadingFx.highlightColor" 	"Highlight Color" 		</item>
+  <item>"STD_lightShadingFx.shadeAmount" 	"Shade Amount" 		</item>
+  <item>"STD_lightShadingFx.highlightAmount" 	"Highlight Amount" 		</item>
+  <item>"STD_lightShadingFx.bands" 	"Bands" 		</item>
+  <item>"STD_lightShadingFx.softness" 	"Softness" 		</item>
+  <item>"STD_lightShadingFx.protectLines" 	"Protect Lines" 		</item>
 
 </stringtable> 
 
