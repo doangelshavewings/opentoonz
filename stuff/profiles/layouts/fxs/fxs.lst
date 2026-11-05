@@ -135,6 +135,7 @@
     STD_iwa_GlareFx
     STD_iwa_BloomFx
     STD_iwa_RainbowFx
+    STD_starGlowFx
   </Light>
   <Matte>
     STD_celColorKeepFx
