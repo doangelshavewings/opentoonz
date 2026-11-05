@@ -108,6 +108,7 @@ set(SOURCES
     blurfx.cpp
     bodyhighlightfx.cpp
     tonehighlightfx.cpp
+    celradialblurfx.cpp
     celdirectionalblurfx.cpp
     celdirectionalmath.cpp
     celmotion.cpp
