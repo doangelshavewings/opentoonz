@@ -107,6 +107,7 @@ set(SOURCES
     blurfx.cpp
     bodyhighlightfx.cpp
     tonehighlightfx.cpp
+    celcolorkeepfx.cpp
     lightshadingfx.cpp
     bright_contfx.cpp
     calligraphicfx.cpp
