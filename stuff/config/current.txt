@@ -2210,6 +2210,15 @@
   <item>"STD_celColorKeyFx.component3025" "Component 3 Threshold 25" </item>
   <item>"STD_celColorKeyFx.replace025" "Use Replacement 25" </item>
   <item>"STD_celColorKeyFx.replacement025" "Replacement Color 25" </item>
+  <item>"STD_celBoilFx" "Cel Boil" </item>
+  <item>"STD_celBoilFx.target" "Boil" </item>
+  <item>"STD_celBoilFx.lineThreshold" "Line Darkness" </item>
+  <item>"STD_celBoilFx.amplitude" "Amplitude" </item>
+  <item>"STD_celBoilFx.size" "Wobble Size" </item>
+  <item>"STD_celBoilFx.detail" "Detail" </item>
+  <item>"STD_celBoilFx.cycle" "Cycle (Frames)" </item>
+  <item>"STD_celBoilFx.blend" "Blend" </item>
+  <item>"STD_celBoilFx.seed" "Seed" </item>
 
 </stringtable> 
 

@@ -29,6 +29,7 @@
     STD_iwa_FlowBlurFx
   </Blur>
   <Distort>
+    STD_celBoilFx
     STD_freeDistortFx
     STD_iwa_GradientWarpFx
     STD_linearWaveFx
