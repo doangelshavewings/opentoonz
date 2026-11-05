@@ -12,6 +12,7 @@ set(HEADERS
     perlinnoise.h
     pins.h
     stdfx.h
+    celsmoothing.h
     shadowbevelutils.h
     texturefxP.h
     warp.h
@@ -107,6 +108,7 @@ set(SOURCES
     blurfx.cpp
     bodyhighlightfx.cpp
     tonehighlightfx.cpp
+    celsmoother2fx.cpp
     celboundaryblurfx.cpp
     celblur.cpp
     alphadistancegradientfx.cpp
